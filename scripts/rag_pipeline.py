@@ -102,7 +102,7 @@ class GeminiRestEmbeddings:
         raise Exception("Failed to embed query via REST API.")
 
 class GeminiRestLLM(LLM):
-    api_key: str
+    api_key: Optional[str]
 
     @property
     def _llm_type(self) -> str:
