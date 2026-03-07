@@ -161,8 +161,10 @@ class HellobooksRAG:
     def __init__(self):
         load_dotenv()
         self.api_key = os.environ.get('GOOGLE_API_KEY') or os.environ.get('GEMINI_API_KEY')
-        if not self.api_key:
-            raise ValueError("API key not found in environment.")
+        self.deepseek_key = os.environ.get('DEEPSEEK_API_KEY')
+        
+        if not self.api_key and not self.deepseek_key:
+            raise ValueError("API key not found! Please set GEMINI_API_KEY or DEEPSEEK_API_KEY in environment/secrets.")
 
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         store_path = os.path.join(base_dir, "vector_store", "index.json")
