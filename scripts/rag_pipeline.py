@@ -109,6 +109,7 @@ class GeminiRestLLM(LLM):
         return "gemini_rest"
 
     def _call(self, prompt: str, stop: List[str] = None, run_manager: Any = None, **kwargs) -> str:
+        import time
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.api_key}"
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -116,12 +117,21 @@ class GeminiRestLLM(LLM):
         }
         headers = {"Content-Type": "application/json"}
         
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
-        data = response.json()
-        try:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError):
-            return f"Error connecting to Gemini: {data}"
+        for attempt in range(3):
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            data = response.json()
+            
+            if response.status_code == 429:
+                wait = min(20 * (attempt + 1), 60)
+                time.sleep(wait)
+                continue
+            
+            try:
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError):
+                return f"Error connecting to Gemini: {data}"
+        
+        return "The AI is currently busy due to high usage. Please wait 1 minute and try again."
 
 class HellobooksRAG:
     def __init__(self):
