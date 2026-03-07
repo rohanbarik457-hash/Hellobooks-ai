@@ -36,7 +36,9 @@ if st.session_state.theme == "Dark":
         .stChatMessage { background-color: #1a1a1a !important; color: #ffffff !important; }
         .stChatMessage * { color: #ffffff !important; }
         h1, h2, h3, h4, h5, h6, p, span, label, div { color: #ffffff !important; }
-        [data-testid="stChatInput"] textarea { background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #333333 !important; }
+        [data-testid="stChatInput"] textarea { background-color: #ffffff !important; color: #000000 !important; border: 1px solid #333333 !important; }
+        [data-testid="stChatInput"] { background-color: #000000 !important; }
+        [data-testid="stChatInput"] button { background-color: #000000 !important; color: #ffffff !important; }
         .stButton > button { background-color: #1a1a1a; color: #ffffff !important; border: 1px solid #333333; }
         .stButton > button:hover { background-color: #333333; }
         .stRadio label { color: #ffffff !important; }
