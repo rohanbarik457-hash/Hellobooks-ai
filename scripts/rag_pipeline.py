@@ -1,6 +1,6 @@
 import os
 import requests
-from typing import List, Any, Optional
+from typing import List, Any
 from dotenv import load_dotenv
 from langchain_core.language_models.llms import LLM
 from langchain_core.vectorstores import InMemoryVectorStore
@@ -93,20 +93,16 @@ class GeminiRestEmbeddings:
         
         for _ in range(3):
             try:
-                if not self.api_key:
-                    break
                 response = requests.post(self.url, headers=headers, json=payload, timeout=10)
                 data = response.json()
                 if "embedding" in data:
                     return data["embedding"]["values"]
-            except Exception:
-                pass
-                
-        # Fallback: Return a zero-vector so the system doesn't crash when using DeepSeek-only
-        return [0.0] * 768
+            except requests.exceptions.Timeout:
+                continue
+        raise Exception("Failed to embed query via REST API.")
 
 class GeminiRestLLM(LLM):
-    api_key: Optional[str]
+    api_key: str
 
     @property
     def _llm_type(self) -> str:
@@ -114,61 +110,34 @@ class GeminiRestLLM(LLM):
 
     def _call(self, prompt: str, stop: List[str] = None, run_manager: Any = None, **kwargs) -> str:
         import time
-        import os
-        
-        # Primary: Gemini 2.5 Flash, Fallbacks: 2.0 Flash, 2.0 Lite, 1.5 Flash
-        gemini_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.0}
         }
         
-        # Try Gemini Models First
-        for model in gemini_models:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
+        for attempt in range(3):
             try:
                 response = requests.post(url, headers=headers, json=payload, timeout=30)
                 data = response.json()
                 
                 if response.status_code == 429:
-                    # Rate limited: try next fallback model immediately
+                    time.sleep(2)
                     continue
                 
                 return data["candidates"][0]["content"]["parts"][0]["text"]
             except Exception:
                 continue
-                
-        # Final Fallback: DeepSeek Chat
-        deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
-        if deepseek_key:
-            deepseek_url = "https://api.deepseek.com/chat/completions"
-            deepseek_headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {deepseek_key}"
-            }
-            deepseek_payload = {
-                "model": "deepseek-chat",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.0
-            }
-            try:
-                ds_resp = requests.post(deepseek_url, headers=deepseek_headers, json=deepseek_payload, timeout=30)
-                ds_data = ds_resp.json()
-                return ds_data["choices"][0]["message"]["content"]
-            except Exception as e:
-                pass
         
-        return "All AI models (Gemini & DeepSeek backups) are busy right now. Please wait 1 minute and try again."
+        return "Main abhi thoda busy hoon. Document mein answer dhundh raha hoon, kripya 1 minute baad dobara puchiye."
 
 class HellobooksRAG:
     def __init__(self):
         load_dotenv()
         self.api_key = os.environ.get('GOOGLE_API_KEY') or os.environ.get('GEMINI_API_KEY')
-        self.deepseek_key = os.environ.get('DEEPSEEK_API_KEY')
-        
-        if not self.api_key and not self.deepseek_key:
-            raise ValueError("API key not found! Please set GEMINI_API_KEY or DEEPSEEK_API_KEY in environment/secrets.")
+        if not self.api_key:
+            raise ValueError("API key not found in environment.")
 
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         store_path = os.path.join(base_dir, "vector_store", "index.json")
