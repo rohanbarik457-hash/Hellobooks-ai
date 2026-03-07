@@ -4,7 +4,7 @@ An AI-powered bookkeeping assistant that answers accounting-related questions us
 
 ## Project Overview
 
-Hellobooks AI is a prototype intelligent accounting assistant. It retrieves relevant information from a curated knowledge base and generates accurate, context-aware answers about accounting concepts.
+Hellobooks AI is a prototype intelligent accounting assistant. It retrieves relevant information from a curated knowledge base of **500 detailed accounting points** and generates accurate, context-aware answers.
 
 ### RAG Architecture
 
@@ -12,97 +12,79 @@ Hellobooks AI is a prototype intelligent accounting assistant. It retrieves rele
 User Question → Retrieve relevant documents → Send context to LLM → Generate answer
 ```
 
-1. **Document Loading** — Markdown files from `knowledge_base/` are loaded and split into chunks.
-2. **Embedding Generation** — Each chunk is converted into a TF-IDF vector (term frequency–inverse document frequency).
-3. **Vector Store** — All vectors are stored locally in a JSON file (`vector_store/store.json`).
-4. **Retrieval** — The user's question is vectorized and compared against stored chunks using cosine similarity.
-5. **Answer Generation** — The most relevant chunks are combined into a coherent answer.
+1. **Document Loading** — Markdown files from `knowledge_base/` are loaded and split into 500 fine-grained chunks.
+2. **Embedding Generation** — Each chunk is converted into a TF-IDF vector (pure Python).
+3. **Auto-Sync** — The system automatically detects knowledge base updates and rebuilds the vector store.
+4. **Vector Store** — All vectors are stored locally in a JSON file (`vector_store/store.json`).
+5. **Retrieval** — Uses cosine similarity to find the most relevant definitions and examples.
+6. **Answer Generation** — Extractive generation synthesizes relevant chunks into a clear answer.
 
 ## Dataset Explanation
 
-The `knowledge_base/` folder contains **5 markdown documents** covering core accounting topics:
+The `knowledge_base/` folder contains **500 items** across 5 topics, each structured with a **Definition** and a **Real-World Example**:
 
-| File | Topic |
-|------|-------|
-| `bookkeeping.md` | Recording transactions, ledger, trial balance, accounts payable/receivable |
-| `invoices.md` | Invoice structure, billing, tax, payment terms |
-| `profit_loss.md` | Revenue, expenses, gross/net profit, operating costs |
-| `balance_sheet.md` | Assets, liabilities, equity, financial position |
-| `cash_flow.md` | Cash inflow/outflow, operating/investing/financing activities |
+| Topic | Entries | Description |
+|-------|---------|-------------|
+| **Bookkeeping** | 100 | Recording transactions, double-entry, ledgers, journals, etc. |
+| **Invoices** | 100 | Billing terms, itemized billing, taxes, payment cycles, etc. |
+| **Profit & Loss** | 100 | Revenue, COGS, gross/net profit, operating expenses, etc. |
+| **Balance Sheet** | 100 | Assets, liabilities, equity, financial ratios, liquidity, etc. |
+| **Cash Flow** | 100 | Operating/investing/financing activities, cash inflow/outflow, etc. |
 
 ## Installation Instructions
 
-```bash
-git clone <your-repo-url>
-cd hellobooks-ai
-```
+1. **Clone the project:**
+   ```bash
+   git clone <your-repo-url>
+   cd hellobooks-ai
+   ```
 
-No external packages are required — the project uses **pure Python** (3.10+).
-
-## How to Generate Embeddings
-
-Before using the chatbot, you must build the vector store:
-
-```bash
-python scripts/create_embeddings.py
-```
-
-This reads all knowledge base documents, splits them into chunks, computes TF-IDF embeddings, and saves them to `vector_store/store.json`.
+2. **Python Environment:**
+   No external packages are required — the project uses **pure Python** (3.10+).
 
 ## How to Run the Chatbot
 
+The system features **Automatic Embedding Generation**. It will build the vector store on first run or whenever you update the documents.
+
 ```bash
 python app.py
 ```
 
-Type your accounting question and press Enter. Type `exit` or `quit` to close.
+- Type your accounting question and press Enter.
+- Type `exit` or `quit` to close.
 
 ## How to Run Using Docker
 
-Build the image:
+1. **Build the image:**
+   ```bash
+   docker build -t hellobooks-ai .
+   ```
 
-```bash
-docker build -t hellobooks-ai .
-```
-
-Run the container:
-
-```bash
-docker run -it hellobooks-ai
-```
+2. **Run the container:**
+   ```bash
+   docker run -it hellobooks-ai
+   ```
 
 ## Example Questions
 
-- "What is a balance sheet?"
-- "Explain double entry accounting"
-- "What are the components of an invoice?"
-- "How is net profit calculated?"
-- "What is cash flow from operating activities?"
-
-## Example Commands
-
-```bash
-python scripts/create_embeddings.py
-python app.py
-```
+- "What is job order costing?"
+- "Tell me about the lockbox system."
+- "What is a pro-forma invoice?"
+- "What is inventory shrinkage?"
+- "Explain shareholder value with an example."
 
 ## Project Structure
 
 ```
 hellobooks-ai/
-├── knowledge_base/
-│   ├── bookkeeping.md
-│   ├── invoices.md
-│   ├── profit_loss.md
-│   ├── balance_sheet.md
-│   └── cash_flow.md
+├── knowledge_base/        # 500-item accounting dataset
 ├── scripts/
-│   ├── create_embeddings.py
-│   └── rag_pipeline.py
+│   ├── create_embeddings.py # Vector generation logic
+│   └── rag_pipeline.py     # RAG & Auto-sync logic
 ├── vector_store/
-│   └── store.json
-├── app.py
-├── requirements.txt
-├── Dockerfile
-└── README.md
+│   └── store.json         # Local vector database
+├── app.py                 # CLI Interface
+├── requirements.txt       # Minimal dependencies
+├── Dockerfile             # Containerization
+└── README.md              # Project documentation
 ```
