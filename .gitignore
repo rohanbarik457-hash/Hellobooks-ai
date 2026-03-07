@@ -1,18 +1,11 @@
-# Environment variables
-.env
-
-# Python caches
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-
-# Virtual environments
+.env
 .venv/
 venv/
-env/
-ENV/
-
-# OS generated files
+*.egg-info/
+dist/
+build/
 .DS_Store
-Thumbs.db
+vector_store/store.json

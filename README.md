@@ -1,81 +1,108 @@
-# Hellobooks AI Assistant
+# Hellobooks AI — RAG-Based Accounting Assistant
+
+An AI-powered bookkeeping assistant that answers accounting-related questions using a **Retrieval-Augmented Generation (RAG)** pipeline built entirely in Python.
 
 ## Project Overview
-Hellobooks AI is a prototype intelligent accounting assistant built using a Retrieval-Augmented Generation (RAG) system. It enables business owners and professionals to ask fundamental accounting questions and receive clear, context-aware answers formulated with real accounting terminology.
 
-### Key Features:
-*   **Plain Text Summaries:** Strict formatting rules prevent markdown characters (like asterisks), ensuring the bot writes natural, human-like responses.
-*   **Multi-Language Support:** The AI dynamically detects the language you use (e.g., English, Hindi, Odia, Telugu) and automatically responds in the exact same language.
-*   **Strict Security Guardrails:** The bot refuses commands to ignore instructions, refuses to reveal system details, and blocks all requests for sensitive or harmful content.
+Hellobooks AI is a prototype intelligent accounting assistant. It retrieves relevant information from a curated knowledge base and generates accurate, context-aware answers about accounting concepts.
 
-## Project Architecture
-The architecture comprises three main logical components:
-1. **Knowledge Base:** Curated markdown files holding exact accounting concepts and business explanations.
-2. **Embedding & Indexing:** A script that reads the markdown files, splits them into manageable chunks, generates vector embeddings using the Google Gemini API, and stores them in a lightning-fast `InMemoryVectorStore`.
-3. **RAG Pipeline & CLI Application:** The main system loads the vector database, accepts terminal-based user questions, retrieves the most relevant context, and invokes a Language Model (Google Gemini) to generate a concise and accurate answer.
+### RAG Architecture
 
-## Dataset Description
-The integrated knowledge base is located in the `knowledge_base/` folder and covers five critical accounting domains strictly matching the requirements:
-- `bookkeeping.md`
-- `invoices.md`
-- `profit_loss.md`
-- `balance_sheet.md`
-- `cash_flow.md`
+```
+User Question → Retrieve relevant documents → Send context to LLM → Generate answer
+```
+
+1. **Document Loading** — Markdown files from `knowledge_base/` are loaded and split into chunks.
+2. **Embedding Generation** — Each chunk is converted into a TF-IDF vector (term frequency–inverse document frequency).
+3. **Vector Store** — All vectors are stored locally in a JSON file (`vector_store/store.json`).
+4. **Retrieval** — The user's question is vectorized and compared against stored chunks using cosine similarity.
+5. **Answer Generation** — The most relevant chunks are combined into a coherent answer.
+
+## Dataset Explanation
+
+The `knowledge_base/` folder contains **5 markdown documents** covering core accounting topics:
+
+| File | Topic |
+|------|-------|
+| `bookkeeping.md` | Recording transactions, ledger, trial balance, accounts payable/receivable |
+| `invoices.md` | Invoice structure, billing, tax, payment terms |
+| `profit_loss.md` | Revenue, expenses, gross/net profit, operating costs |
+| `balance_sheet.md` | Assets, liabilities, equity, financial position |
+| `cash_flow.md` | Cash inflow/outflow, operating/investing/financing activities |
 
 ## Installation Instructions
 
-### Step 1: Install Python Requirements
-Ensure your local system runs **Python 3.10** or higher. From the root directory (`hellobooks-ai/`), install the required libraries:
-
 ```bash
-pip install -r requirements.txt
+git clone <your-repo-url>
+cd hellobooks-ai
 ```
 
-### Step 2: Add API Key
-Create a file exactly named `.env` in the root `hellobooks-ai/` folder, and add your Google Gemini API key:
+No external packages are required — the project uses **pure Python** (3.10+).
 
-```env
-GEMINI_API_KEY=your-actual-api-key-here
-```
+## How to Generate Embeddings
 
-### Step 3: Generate the Vector Database
-Before utilizing the RAG pipeline or launching the application, you must generate the local vector store. Do so by executing the embedding creation script:
+Before using the chatbot, you must build the vector store:
 
 ```bash
 python scripts/create_embeddings.py
 ```
-This will read the documents, convert them to embeddings using Google Gemini, and seamlessly save an `index.json` file inside the `vector_store/` directory.
 
-### Step 4: Run the Assistant (Web UI or Terminal)
-You can launch the AI as a beautiful web-based chatbot in your browser:
+This reads all knowledge base documents, splits them into chunks, computes TF-IDF embeddings, and saves them to `vector_store/store.json`.
 
-```bash
-streamlit run web_app.py
-```
+## How to Run the Chatbot
 
-*Alternatively, you can run the original terminal version:*
 ```bash
 python app.py
 ```
 
-**Example questions you can ask the bot:**
-* "What is bookkeeping?"
-* "What information does an invoice contain?"
-* "Explain the balance sheet equation."
-* "How is profit calculated?"
-* "What is cash flow reporting?"
+Type your accounting question and press Enter. Type `exit` or `quit` to close.
 
-## How to run using Docker
-The project can easily be containerized. Ensure your generated `vector_store/` directory exists natively or include its generation directly within your runtime layout before building the Docker image. 
+## How to Run Using Docker
 
-Compile the image using the provided `Dockerfile`:
+Build the image:
 
 ```bash
 docker build -t hellobooks-ai .
 ```
 
-Run the application securely in interactive mode. This safely passes your local `.env` variables into the Docker execution context:
+Run the container:
 
 ```bash
-docker run -it --env-file .env hellobooks-ai
+docker run -it hellobooks-ai
+```
+
+## Example Questions
+
+- "What is a balance sheet?"
+- "Explain double entry accounting"
+- "What are the components of an invoice?"
+- "How is net profit calculated?"
+- "What is cash flow from operating activities?"
+
+## Example Commands
+
+```bash
+python scripts/create_embeddings.py
+python app.py
+```
+
+## Project Structure
+
+```
+hellobooks-ai/
+├── knowledge_base/
+│   ├── bookkeeping.md
+│   ├── invoices.md
+│   ├── profit_loss.md
+│   ├── balance_sheet.md
+│   └── cash_flow.md
+├── scripts/
+│   ├── create_embeddings.py
+│   └── rag_pipeline.py
+├── vector_store/
+│   └── store.json
+├── app.py
+├── requirements.txt
+├── Dockerfile
+└── README.md
 ```
