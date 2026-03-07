@@ -93,13 +93,17 @@ class GeminiRestEmbeddings:
         
         for _ in range(3):
             try:
+                if not self.api_key:
+                    break
                 response = requests.post(self.url, headers=headers, json=payload, timeout=10)
                 data = response.json()
                 if "embedding" in data:
                     return data["embedding"]["values"]
-            except requests.exceptions.Timeout:
-                continue
-        raise Exception("Failed to embed query via REST API.")
+            except Exception:
+                pass
+                
+        # Fallback: Return a zero-vector so the system doesn't crash when using DeepSeek-only
+        return [0.0] * 768
 
 class GeminiRestLLM(LLM):
     api_key: Optional[str]
