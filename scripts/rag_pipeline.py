@@ -110,28 +110,28 @@ class GeminiRestLLM(LLM):
 
     def _call(self, prompt: str, stop: List[str] = None, run_manager: Any = None, **kwargs) -> str:
         import time
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.api_key}"
+        models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
+        headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.0}
         }
-        headers = {"Content-Type": "application/json"}
         
-        for attempt in range(3):
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            data = response.json()
-            
-            if response.status_code == 429:
-                wait = min(20 * (attempt + 1), 60)
-                time.sleep(wait)
-                continue
-            
+        for model in models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
             try:
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                data = response.json()
+                
+                if response.status_code == 429:
+                    time.sleep(2)
+                    continue
+                
                 return data["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError):
-                return f"Error connecting to Gemini: {data}"
+            except Exception:
+                continue
         
-        return "The AI is currently busy due to high usage. Please wait 1 minute and try again."
+        return "All models are busy right now. Please wait 1 minute and try again."
 
 class HellobooksRAG:
     def __init__(self):
