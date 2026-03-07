@@ -76,31 +76,18 @@ with st.sidebar:
     st.markdown("---")
     st.title("📜 Chat History")
     
-    # Display mini history in sidebar
     if not st.session_state.messages:
         st.caption("No history yet.")
     else:
         for i, msg in enumerate(st.session_state.messages):
             if msg["role"] == "user":
-                st.markdown(f"**You:** {msg['content'][:30]}...")
+                time_str = msg.get("time", "")
+                st.markdown(f"� **{time_str}**")
+                st.markdown(f"  {msg['content'][:35]}...")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💾 Save Chat"):
-            if st.session_state.messages:
-                timestamp = datetime.now().strftime("%I:%M %p")
-                chat_copy = {
-                    "title": st.session_state.messages[0]["content"][:25],
-                    "time": timestamp,
-                    "messages": list(st.session_state.messages)
-                }
-                st.session_state.saved_chats.append(chat_copy)
-                st.toast("Chat saved!")
-                st.rerun()
-    with col2:
-        if st.button("🗑 Clear Chat"):
-            st.session_state.messages = []
-            st.rerun()
+    if st.button("🗑 Clear Chat"):
+        st.session_state.messages = []
+        st.rerun()
     
     # Download current chat as text
     if st.session_state.messages:
@@ -132,8 +119,9 @@ for message in st.session_state.messages:
 rag_system = load_rag_system()
 
 if question := st.chat_input("Ask an accounting question..."):
-    # Add user question to history
-    st.session_state.messages.append({"role": "user", "content": question})
+    # Add user question with real-time timestamp
+    now = datetime.now().strftime("%d %b %Y, %I:%M %p")
+    st.session_state.messages.append({"role": "user", "content": question, "time": now})
     with st.chat_message("user"):
         st.markdown(question)
 
