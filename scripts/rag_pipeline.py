@@ -1,6 +1,6 @@
 import os
 import requests
-from typing import List, Any
+from typing import List, Any, Optional
 from dotenv import load_dotenv
 from langchain_core.language_models.llms import LLM
 from langchain_core.vectorstores import InMemoryVectorStore
