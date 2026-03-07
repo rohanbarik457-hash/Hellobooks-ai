@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import sys
+from datetime import datetime
 
 # Inject Streamlit Cloud secrets into environment (for deployed app)
 try:
@@ -21,6 +22,9 @@ if "theme" not in st.session_state:
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "saved_chats" not in st.session_state:
+    st.session_state.saved_chats = []
 
 # CSS for Dark/Light mode overrides
 if st.session_state.theme == "Dark":
@@ -59,10 +63,42 @@ with st.sidebar:
         for i, msg in enumerate(st.session_state.messages):
             if msg["role"] == "user":
                 st.markdown(f"**You:** {msg['content'][:30]}...")
-                
-    if st.button("Clear Chat"):
-        st.session_state.messages = []
-        st.rerun()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Save Chat"):
+            if st.session_state.messages:
+                timestamp = datetime.now().strftime("%I:%M %p")
+                chat_copy = {
+                    "title": st.session_state.messages[0]["content"][:25],
+                    "time": timestamp,
+                    "messages": list(st.session_state.messages)
+                }
+                st.session_state.saved_chats.append(chat_copy)
+                st.toast("Chat saved!")
+                st.rerun()
+    with col2:
+        if st.button("🗑 Clear Chat"):
+            st.session_state.messages = []
+            st.rerun()
+    
+    # Download current chat as text
+    if st.session_state.messages:
+        chat_text = ""
+        for msg in st.session_state.messages:
+            role = "You" if msg["role"] == "user" else "Hellobooks AI"
+            chat_text += f"{role}: {msg['content']}\n\n"
+        st.download_button("📥 Download Chat", chat_text, file_name="hellobooks_chat.txt", mime="text/plain")
+    
+    # Saved chats section
+    if st.session_state.saved_chats:
+        st.markdown("---")
+        st.title("💼 Saved Chats")
+        for idx, saved in enumerate(st.session_state.saved_chats):
+            label = f"{saved['title']}... ({saved['time']})"
+            if st.button(label, key=f"load_{idx}"):
+                st.session_state.messages = list(saved["messages"])
+                st.rerun()
 
 # --- Main UI ---
 st.title("📚 Hellobooks AI Assistant")
