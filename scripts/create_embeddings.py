@@ -82,83 +82,91 @@ def load_markdown_files(folder: str) -> list[dict]:
 def split_into_chunks(text: str, source: str, topic: str) -> list[dict]:
     """
     Split a document into fine-grained chunks.
-    Each numbered point (1. **Title**: ...) becomes its own chunk.
+    Each numbered point (e.g., 1. Name: Description) becomes its own chunk.
     The document title and description are prepended to each chunk
-    for better context during retrieval.
+    for better semantic context during retrieval.
     """
     lines = text.strip().split("\n")
     chunks = []
 
-    # Extract the document title (first line starting with #)
+    # Extract the document title and description
     doc_title = ""
     doc_description = ""
     content_lines = []
 
+    # Better regex for detecting the start of a multi-point list (1., 2., etc.)
+    # or just content lines.
     for line in lines:
         stripped = line.strip()
+        if not stripped:
+            continue
+            
         if stripped.startswith("# ") and not doc_title:
             doc_title = stripped.lstrip("# ").strip()
         elif stripped.startswith("**Description**"):
             doc_description = stripped.replace("**Description**:", "").replace("**Description**", "").strip()
-        elif stripped:
+        else:
+            # Check if it starts with a number or is general content
             content_lines.append(stripped)
 
-    # Build a context prefix that helps TF-IDF match the right topic
+    # Build a context prefix that helps TF-IDF identify the correct topic
     context_prefix = f"Topic: {doc_title}."
     if doc_description:
         context_prefix += f" {doc_description}"
 
-    # Split each numbered point into its own chunk
+    # Split each line (numbered point) into its own chunk
     for line in content_lines:
-        # Remove the leading number and bold markers for cleaner text
-        clean_line = re.sub(r"^\d+\.\s*", "", line)
+        # Detect numbered points like "1. Name: Description" or "20. Name"
+        # and clean up formatting
+        clean_line = re.sub(r"^\d+[\.\)]\s*", "", line)
         clean_line = clean_line.replace("**", "")
 
-        # Combine: topic context + this specific point
+        # Combine the topic context with the specific point content
         chunk_text = f"{context_prefix}\n{clean_line}"
 
         chunks.append({
             "text": chunk_text,
             "source": source,
-            "topic": topic,
-            "original_line": clean_line,
+            "topic": topic
         })
 
-    # If no numbered points were found, treat the whole document as one chunk
+    # Fallback if no specific points were extracted
     if not chunks:
         chunks.append({
-            "text": text.strip(),
+            "text": f"{context_prefix}\n{text.strip()}",
             "source": source,
-            "topic": topic,
-            "original_line": text.strip(),
+            "topic": topic
         })
 
     return chunks
 
 
-# ── Main build function ─────────────────────────────────────────────
-
 def build_vector_store():
+    """Reads documents, chunks them, generates TF-IDF vectors, and saves to JSON."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     knowledge_base_path = os.path.join(base_dir, "knowledge_base")
     vector_store_path = os.path.join(base_dir, "vector_store")
 
+    if not os.path.exists(knowledge_base_path):
+        print(f"[!] Knowledge base folder not found: {knowledge_base_path}")
+        return
+
     os.makedirs(vector_store_path, exist_ok=True)
 
     # Step 1: Load markdown files
-    print("[*] Loading documents from knowledge_base/...")
+    print("[*] Rebuilding vector store from knowledge_base/...")
     documents = load_markdown_files(knowledge_base_path)
-    print(f"[*] Loaded {len(documents)} documents.")
+    if not documents:
+        print("[!] No markdown files found.")
+        return
 
-    # Step 2: Split into fine-grained chunks (one per numbered point)
+    # Step 2: Split into fine-grained chunks
     all_chunks = []
     for doc in documents:
         doc_chunks = split_into_chunks(doc["text"], doc["source"], doc["topic"])
         all_chunks.extend(doc_chunks)
-    print(f"[*] Created {len(all_chunks)} chunks.")
-
+    
     # Step 3: Tokenize
-    print("[*] Generating TF-IDF embeddings...")
     all_tokens = [tokenize(chunk["text"]) for chunk in all_chunks]
 
     # Step 4: Compute IDF
@@ -172,14 +180,8 @@ def build_vector_store():
         tfidf_vectors.append(vec)
 
     # Step 6: Save
-    # Strip original_line from saved chunks (only used during debug)
-    save_chunks = [
-        {"text": c["text"], "source": c["source"], "topic": c["topic"]}
-        for c in all_chunks
-    ]
-
     store = {
-        "chunks": save_chunks,
+        "chunks": all_chunks,
         "idf": idf,
         "tfidf_vectors": tfidf_vectors,
     }
@@ -188,10 +190,11 @@ def build_vector_store():
     with open(store_file, "w", encoding="utf-8") as f:
         json.dump(store, f, ensure_ascii=False, indent=2)
 
-    print(f"[*] Vector store saved to {store_file}")
-    print(f"    Total chunks: {len(all_chunks)}")
-    print(f"    Vocabulary size: {len(idf)}")
-    print("[*] Done!")
+    print(f"[*] Rebuild complete: {len(all_chunks)} chunks indexed in {store_file}")
+
+
+if __name__ == "__main__":
+    build_vector_store()
 
 
 if __name__ == "__main__":

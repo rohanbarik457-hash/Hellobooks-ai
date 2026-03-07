@@ -71,23 +71,23 @@ class HellobooksRAG:
 
     Architecture:
         1. User asks a question
-        2. Question is turned into a TF-IDF vector
-        3. Cosine similarity finds the top-k relevant chunks from the knowledge base
-        4. Retrieved chunks are combined into a clear, concise answer
+        2. Auto-sync: Check if knowledge base has been updated, rebuild if necessary
+        3. Question is turned into a TF-IDF vector
+        4. Cosine similarity finds relevant chunks from the knowledge base
+        5. Retrieved chunks are combined into a clear, concise answer
     """
 
     def __init__(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        store_file = os.path.join(base_dir, "vector_store", "store.json")
+        self.kb_path = os.path.join(base_dir, "knowledge_base")
+        self.store_dir = os.path.join(base_dir, "vector_store")
+        self.store_file = os.path.join(self.store_dir, "store.json")
 
-        if not os.path.exists(store_file):
-            raise FileNotFoundError(
-                f"Vector store not found at {store_file}.\n"
-                f"Run 'python scripts/create_embeddings.py' first."
-            )
+        # Automatically rebuild store if knowledge base changed
+        self._check_for_updates()
 
         print("[System] Loading vector store...")
-        with open(store_file, "r", encoding="utf-8") as f:
+        with open(self.store_file, "r", encoding="utf-8") as f:
             store = json.load(f)
 
         self.chunks = store["chunks"]
@@ -96,6 +96,42 @@ class HellobooksRAG:
 
         print(f"[System] Loaded {len(self.chunks)} document chunks.")
         print("[System] RAG system ready.")
+
+    def _check_for_updates(self):
+        """
+        Check if any .md files in knowledge_base are newer than store.json.
+        If so, rebuild the vector store automatically.
+        """
+        try:
+            from scripts.create_embeddings import build_vector_store
+            
+            needs_rebuild = False
+            
+            if not os.path.exists(self.store_file):
+                print("[System] Vector store not found. Building for the first time...")
+                needs_rebuild = True
+            else:
+                store_mtime = os.path.getmtime(self.store_file)
+                
+                # Check timestamps of all markdown files
+                for root, _, files in os.walk(self.kb_path):
+                    for file in files:
+                        if file.endswith(".md"):
+                            file_path = os.path.join(root, file)
+                            if os.path.getmtime(file_path) > store_mtime:
+                                print(f"[System] Update detected in {file}. Rebuilding vector store...")
+                                needs_rebuild = True
+                                break
+                    if needs_rebuild:
+                        break
+            
+            if needs_rebuild:
+                build_vector_store()
+                
+        except Exception as e:
+            print(f"[!] Warning: Auto-sync failed: {e}")
+            if not os.path.exists(self.store_file):
+                raise RuntimeError("Critical: Knowledge base not found and auto-sync failed.")
 
     def _retrieve(self, question: str, top_k: int = 5) -> list[dict]:
         """
