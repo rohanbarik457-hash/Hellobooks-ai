@@ -30,19 +30,22 @@ if "saved_chats" not in st.session_state:
 if st.session_state.theme == "Dark":
     st.markdown("""
         <style>
-        .stApp { background-color: #1a1a2e; color: #e0e0e0; }
-        [data-testid="stSidebar"] { background-color: #16213e; color: #e0e0e0; }
-        [data-testid="stSidebar"] * { color: #e0e0e0 !important; }
-        .stChatMessage { background-color: #1f2940 !important; color: #e0e0e0 !important; }
-        .stChatMessage * { color: #e0e0e0 !important; }
-        h1, h2, h3, h4, h5, h6, p, span, label, div { color: #e0e0e0 !important; }
-        [data-testid="stChatInput"] textarea { background-color: #0f3460 !important; color: #ffffff !important; }
-        .stButton > button { background-color: #0f3460; color: #ffffff !important; border: 1px solid #1a5276; }
-        .stButton > button:hover { background-color: #1a5276; }
-        .stRadio label { color: #e0e0e0 !important; }
-        .stDownloadButton > button { background-color: #0f3460; color: #ffffff !important; }
-        .stMarkdown, .stCaption { color: #e0e0e0 !important; }
-        hr { border-color: #2c3e50 !important; }
+        .stApp { background-color: #000000; color: #ffffff; }
+        [data-testid="stSidebar"] { background-color: #111111; color: #ffffff; }
+        [data-testid="stSidebar"] * { color: #ffffff !important; }
+        .stChatMessage { background-color: #1a1a1a !important; color: #ffffff !important; }
+        .stChatMessage * { color: #ffffff !important; }
+        h1, h2, h3, h4, h5, h6, p, span, label, div { color: #ffffff !important; }
+        [data-testid="stChatInput"] textarea { background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #333333 !important; }
+        .stButton > button { background-color: #1a1a1a; color: #ffffff !important; border: 1px solid #333333; }
+        .stButton > button:hover { background-color: #333333; }
+        .stRadio label { color: #ffffff !important; }
+        .stDownloadButton > button { background-color: #1a1a1a; color: #ffffff !important; border: 1px solid #333333; }
+        .stMarkdown, .stCaption { color: #ffffff !important; }
+        [data-testid="stHeader"] { background-color: #000000 !important; }
+        [data-testid="stToolbar"] { background-color: #000000 !important; }
+        [data-testid="stBottomBlockContainer"] { background-color: #000000 !important; }
+        hr { border-color: #333333 !important; }
         </style>
     """, unsafe_allow_html=True)
 
