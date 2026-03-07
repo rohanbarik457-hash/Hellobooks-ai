@@ -2,6 +2,10 @@ import streamlit as st
 import os
 import sys
 from datetime import datetime
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, module="langchain_core")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # Inject Streamlit Cloud secrets into environment (for deployed app)
 try:

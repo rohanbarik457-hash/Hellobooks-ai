@@ -3,6 +3,10 @@ import os
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="langchain_core")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 from scripts.rag_pipeline import HellobooksRAG
 
 def main():
