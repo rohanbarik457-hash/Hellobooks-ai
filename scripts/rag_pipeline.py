@@ -130,7 +130,7 @@ class GeminiRestLLM(LLM):
             except Exception:
                 continue
         
-        return "Main abhi thoda busy hoon. Document mein answer dhundh raha hoon, kripya 1 minute baad dobara puchiye."
+        return "⚠️ **Gemini API Limit Reached!**\n\nGoogle Gemini AI ka daily free quota khatam ho gaya hai.\n\n**Limit Info:**\n- Free Tier Limit: 1,500 requests/day & 15 requests/minute.\n- Current Status: All requests used or too many requests at once.\n\n**Solution:** Thodi der wait karein (1 minute), ya kal try karein jab limit reset ho jayegi."
 
 class HellobooksRAG:
     def __init__(self):

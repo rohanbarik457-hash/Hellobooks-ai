@@ -9,8 +9,6 @@ try:
         os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
     if "GOOGLE_API_KEY" in st.secrets:
         os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
-    if "DEEPSEEK_API_KEY" in st.secrets:
-        os.environ["DEEPSEEK_API_KEY"] = st.secrets["DEEPSEEK_API_KEY"]
 except Exception:
     pass
 
@@ -90,6 +88,9 @@ with st.sidebar:
     if st.button("🗑 Clear Chat"):
         st.session_state.messages = []
         st.rerun()
+        
+    st.markdown("---")
+    st.info("ℹ️ **Note on AI Limits**\nHellobooks uses Google Gemini (Free Tier).\nDaily Limit: 1,500 questions.\nIf you get a 'Limit Reached' error, please try again in 1 minute or the next day.")
     
     # Download current chat as text
     if st.session_state.messages:
