@@ -109,7 +109,7 @@ class GeminiRestLLM(LLM):
         return "gemini_rest"
 
     def _call(self, prompt: str, stop: List[str] = None, run_manager: Any = None, **kwargs) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={self.api_key}"
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.0}
