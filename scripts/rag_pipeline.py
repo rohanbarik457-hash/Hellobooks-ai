@@ -110,28 +110,52 @@ class GeminiRestLLM(LLM):
 
     def _call(self, prompt: str, stop: List[str] = None, run_manager: Any = None, **kwargs) -> str:
         import time
-        models = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
+        import os
+        
+        # Primary: Gemini 2.5 Flash, Fallbacks: 2.0 Flash, 2.0 Lite, 1.5 Flash
+        gemini_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.0}
         }
         
-        for model in models:
+        # Try Gemini Models First
+        for model in gemini_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.api_key}"
             try:
                 response = requests.post(url, headers=headers, json=payload, timeout=30)
                 data = response.json()
                 
                 if response.status_code == 429:
-                    time.sleep(2)
+                    # Rate limited: try next fallback model immediately
                     continue
                 
                 return data["candidates"][0]["content"]["parts"][0]["text"]
             except Exception:
                 continue
+                
+        # Final Fallback: DeepSeek Chat
+        deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        if deepseek_key:
+            deepseek_url = "https://api.deepseek.com/chat/completions"
+            deepseek_headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {deepseek_key}"
+            }
+            deepseek_payload = {
+                "model": "deepseek-chat",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.0
+            }
+            try:
+                ds_resp = requests.post(deepseek_url, headers=deepseek_headers, json=deepseek_payload, timeout=30)
+                ds_data = ds_resp.json()
+                return ds_data["choices"][0]["message"]["content"]
+            except Exception as e:
+                pass
         
-        return "All models are busy right now. Please wait 1 minute and try again."
+        return "All AI models (Gemini & DeepSeek backups) are busy right now. Please wait 1 minute and try again."
 
 class HellobooksRAG:
     def __init__(self):

@@ -9,6 +9,8 @@ try:
         os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
     if "GOOGLE_API_KEY" in st.secrets:
         os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+    if "DEEPSEEK_API_KEY" in st.secrets:
+        os.environ["DEEPSEEK_API_KEY"] = st.secrets["DEEPSEEK_API_KEY"]
 except Exception:
     pass
 
