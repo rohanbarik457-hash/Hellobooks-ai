@@ -3,9 +3,13 @@ import os
 import sys
 
 # Inject Streamlit Cloud secrets into environment (for deployed app)
-if hasattr(st, "secrets"):
-    for key in st.secrets:
-        os.environ[key] = st.secrets[key]
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+    if "GOOGLE_API_KEY" in st.secrets:
+        os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
+except Exception:
+    pass
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from scripts.rag_pipeline import HellobooksRAG
