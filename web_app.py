@@ -47,6 +47,10 @@ if st.session_state.theme == "Dark":
         [data-testid="stHeader"] { background-color: #000000 !important; }
         [data-testid="stToolbar"] { background-color: #000000 !important; }
         [data-testid="stBottomBlockContainer"] { background-color: #000000 !important; }
+        [data-testid="stBottom"] { background-color: #000000 !important; }
+        [data-testid="stBottom"] > div { background-color: #000000 !important; }
+        [data-testid="stChatInput"] > div { background-color: #000000 !important; }
+        section[data-testid="stBottom"] { background-color: #000000 !important; }
         hr { border-color: #333333 !important; }
         </style>
     """, unsafe_allow_html=True)
