@@ -30,8 +30,19 @@ if "saved_chats" not in st.session_state:
 if st.session_state.theme == "Dark":
     st.markdown("""
         <style>
-        .stApp { background-color: #1E1E1E; color: #FFFFFF; }
-        .stChatMessage { background-color: #2D2D2D !important; }
+        .stApp { background-color: #1a1a2e; color: #e0e0e0; }
+        [data-testid="stSidebar"] { background-color: #16213e; color: #e0e0e0; }
+        [data-testid="stSidebar"] * { color: #e0e0e0 !important; }
+        .stChatMessage { background-color: #1f2940 !important; color: #e0e0e0 !important; }
+        .stChatMessage * { color: #e0e0e0 !important; }
+        h1, h2, h3, h4, h5, h6, p, span, label, div { color: #e0e0e0 !important; }
+        [data-testid="stChatInput"] textarea { background-color: #0f3460 !important; color: #ffffff !important; }
+        .stButton > button { background-color: #0f3460; color: #ffffff !important; border: 1px solid #1a5276; }
+        .stButton > button:hover { background-color: #1a5276; }
+        .stRadio label { color: #e0e0e0 !important; }
+        .stDownloadButton > button { background-color: #0f3460; color: #ffffff !important; }
+        .stMarkdown, .stCaption { color: #e0e0e0 !important; }
+        hr { border-color: #2c3e50 !important; }
         </style>
     """, unsafe_allow_html=True)
 
