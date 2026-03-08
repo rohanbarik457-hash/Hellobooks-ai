@@ -9,16 +9,21 @@ Hellobooks AI is a prototype intelligent accounting assistant. It retrieves rele
 ### RAG Architecture
 
 ```
-User Question → Retrieve relevant documents → Send context to LLM → Generate answer
+User Question → Security Validation → Retrieve BM25 Context → Send to Interface → Generate Answer
 ```
 
-1. **Document Loading** — Markdown files from `knowledge_base/` are loaded and split into 500 fine-grained chunks.
-2. **Embedding Generation** — Each chunk is converted into a TF-IDF vector (pure Python).
-3. **Auto-Sync** — The system automatically detects knowledge base updates and rebuilds the vector store.
+1. **Document Loading** — Markdown files from `knowledge_base/` are securely loaded (with path traversal and size limits) and split into fine-grained chunks.
+2. **Embedding Generation** — Each chunk is converted into an intelligent **BM25 statistical index** (pure Python) with term-boosting capabilities.
+3. **True Live-Reload** — The system automatically detects knowledge base updates per query and seamlessly rebuilds the vector store instantly without requiring a restart.
 4. **Vector Store** — All vectors are stored locally in a JSON file (`vector_store/store.json`).
-5. **Retrieval** — Uses cosine similarity to find the most relevant definitions and examples.
-6. **Answer Generation** — Extractive generation synthesizes relevant chunks into a clear answer.
+5. **Retrieval** — Uses the advanced BM25 ranking algorithm to prioritize exact definition matches over partial occurrences.
+6. **Answer Generation** — Extractive generation synthesizes relevant chunks into a clean, numbered answer.
 
+## Cybersecurity Hardening
+This pipeline has been refactored explicitly for production security:
+- **Resource Exhaustion (DoS) Protection:** Hard limits on query lengths and parsed file sizes.
+- **Directory Traversal Blocking:** Strict `.realpath()` mathematical proofs prevent arbitrary file reads.
+- **Opaque Handling:** Errors log privately to an internal system file without leaking tracebacks to the end-user.
 ## Dataset Explanation
 
 The `knowledge_base/` folder contains **500 items** across 5 topics, each structured with a **Definition** and a **Real-World Example**:
@@ -77,13 +82,15 @@ python app.py
 
 ```
 hellobooks-ai/
-├── knowledge_base/        # 500-item accounting dataset
-├── scripts/
-│   ├── create_embeddings.py # Vector generation logic
-│   └── rag_pipeline.py     # RAG & Auto-sync logic
+├── knowledge_base/        # Curated generic markdown datasets
+├── scripts/               # Object-Oriented Backend
+│   ├── create_embeddings.py # Vector generation & parsing logic
+│   ├── rag_pipeline.py      # Core BM25 query & live-sync orchestrator
+│   └── text_processing.py   # Tokenization utility class
 ├── vector_store/
 │   └── store.json         # Local vector database
-├── app.py                 # CLI Interface
+├── system_errors.log      # Secure internal error logging
+├── app.py                 # Hardened CLI Interface
 ├── requirements.txt       # Minimal dependencies
 ├── Dockerfile             # Containerization
 └── README.md              # Project documentation
