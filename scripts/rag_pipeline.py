@@ -1,81 +1,31 @@
 """
-RAG Pipeline for Hellobooks AI
+Retrieval-Augmented Generation (RAG) Pipeline
 
-This module implements a Retrieval-Augmented Generation (RAG) system:
-    User Question → Retrieve relevant document chunks → Generate answer from context
-
-Embedding: Pure Python TF-IDF (no external ML libraries needed)
-Retrieval: Cosine similarity on TF-IDF vectors
-Generation: Synthesizes relevant chunks into a concise, focused answer
+Responsible for servicing user queries by searching the BM25 vector store and 
+returning highly relevant, human-readable answers. Supports auto-rebuilding 
+if the knowledge base is edited during runtime.
 """
 
 import os
 import json
-import math
 import re
-from collections import Counter
+import logging
+from typing import List, Dict, Tuple
 
+from scripts.text_processing import tokenize_text
 
-# ── Stop words and tokenizer (must match create_embeddings.py) ──────
-
-STOP_WORDS = {
-    "a", "an", "the", "is", "it", "in", "on", "of", "to", "and", "or",
-    "for", "with", "as", "at", "by", "from", "that", "this", "are", "was",
-    "were", "be", "been", "being", "have", "has", "had", "do", "does",
-    "did", "will", "would", "shall", "should", "may", "might", "can",
-    "could", "not", "no", "but", "if", "so", "than", "too", "very",
-    "just", "about", "also", "into", "over", "such", "its", "your",
-    "our", "their", "we", "you", "he", "she", "they", "them", "his",
-    "her", "all", "each", "every", "both", "few", "more", "most",
-    "other", "some", "any", "these", "those", "what", "which", "who",
-    "how", "when", "where", "why", "up", "out", "then", "here", "there",
-}
-
-
-def tokenize(text: str) -> list[str]:
-    words = re.findall(r"[a-z0-9]+", text.lower())
-    return [w for w in words if w not in STOP_WORDS and len(w) > 1]
-
-
-def compute_tf(tokens: list[str]) -> dict[str, float]:
-    counts = Counter(tokens)
-    total = len(tokens) if tokens else 1
-    return {word: count / total for word, count in counts.items()}
-
-
-def compute_tfidf_vector(tf: dict, idf: dict) -> dict[str, float]:
-    return {word: tf_val * idf.get(word, 0) for word, tf_val in tf.items()}
-
-
-def cosine_similarity(vec_a: dict, vec_b: dict) -> float:
-    """Compute cosine similarity between two sparse TF-IDF vectors."""
-    common = set(vec_a.keys()) & set(vec_b.keys())
-    if not common:
-        return 0.0
-
-    dot = sum(vec_a[k] * vec_b[k] for k in common)
-    norm_a = math.sqrt(sum(v ** 2 for v in vec_a.values()))
-    norm_b = math.sqrt(sum(v ** 2 for v in vec_b.values()))
-
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-
-    return dot / (norm_a * norm_b)
-
-
-# ── Main RAG class ──────────────────────────────────────────────────
+# Define boundaries to protect against Resource Exhaustion (DoS)
+MAX_QUERY_LENGTH = 500
 
 class HellobooksRAG:
     """
-    Retrieval-Augmented Generation system for accounting Q&A.
-
-    Architecture:
-        1. User asks a question
-        2. Auto-sync: Check if knowledge base has been updated, rebuild if necessary
-        3. Question is turned into a TF-IDF vector
-        4. Cosine similarity finds relevant chunks from the knowledge base
-        5. Retrieved chunks are combined into a clear, concise answer
+    Core RAG orchestrator that dynamically updates the index,
+    scores queries using BM25, and generates formatted responses.
     """
+
+    # BM25 Tuning Parameters
+    BM25_K1 = 1.5
+    BM25_B = 0.75
 
     def __init__(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -83,76 +33,148 @@ class HellobooksRAG:
         self.store_dir = os.path.join(base_dir, "vector_store")
         self.store_file = os.path.join(self.store_dir, "store.json")
 
-        # Automatically rebuild store if knowledge base changed
+        # Initial load and auto-sync
         self._check_for_updates()
+        self._load_store()
 
-        print("[System] Loading vector store...")
-        with open(self.store_file, "r", encoding="utf-8") as f:
-            store = json.load(f)
+    def _load_store(self):
+        """Safely loads the pre-computed BM25 indices from the disk."""
+        logging.info("Loading vector store into memory...")
+        try:
+            # Defensive check to ensure we aren't loading a massive malicious file
+            if os.path.exists(self.store_file) and os.path.getsize(self.store_file) > 50 * 1024 * 1024:
+                raise ValueError("Vector store exceeds maximum safe size (50MB).")
 
-        self.chunks = store["chunks"]
-        self.idf = store["idf"]
-        self.tfidf_vectors = store["tfidf_vectors"]
+            with open(self.store_file, "r", encoding="utf-8") as f:
+                store = json.load(f)
 
-        print(f"[System] Loaded {len(self.chunks)} document chunks.")
-        print("[System] RAG system ready.")
+            # Defensive typing and fallback defaults for loaded data
+            self.chunks = store.get("chunks", [])
+            self.idf = store.get("idf", {})
+            self.doc_term_counts = store.get("doc_term_counts", [])
+            self.doc_lengths = store.get("doc_lengths", [])
+            self.avgdl = store.get("avgdl", 1.0)
+            
+            # Validate core structures exist to prevent downstream crashes
+            if not isinstance(self.chunks, list) or not isinstance(self.idf, dict):
+                 raise ValueError("Corrupted vector store format.")
 
-    def _check_for_updates(self):
+        except FileNotFoundError:
+            raise RuntimeError("Vector store not found. Ensure indexing completes before querying.")
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to parse vector store JSON: {e}")
+            raise RuntimeError("Vector store is corrupted. Please rebuild the index.")
+
+
+    def _check_for_updates(self) -> bool:
         """
-        Check if any .md files in knowledge_base are newer than store.json.
-        If so, rebuild the vector store automatically.
+        Dynamically compares timestamps of markdown files against the index.
+        Rebuilds the index if new or modified files are detected.
+        
+        Returns:
+            bool: True if an update and rebuild occurred, False otherwise.
         """
         try:
             from scripts.create_embeddings import build_vector_store
             
-            needs_rebuild = False
-            
             if not os.path.exists(self.store_file):
-                print("[System] Vector store not found. Building for the first time...")
-                needs_rebuild = True
-            else:
-                store_mtime = os.path.getmtime(self.store_file)
+                print("[System] Vector store missing. Building initial index...")
+                build_vector_store()
+                return True
                 
-                # Check timestamps of all markdown files
-                for root, _, files in os.walk(self.kb_path):
-                    for file in files:
-                        if file.endswith(".md"):
-                            file_path = os.path.join(root, file)
-                            if os.path.getmtime(file_path) > store_mtime:
-                                print(f"[System] Update detected in {file}. Rebuilding vector store...")
-                                needs_rebuild = True
-                                break
-                    if needs_rebuild:
-                        break
+            store_mtime = os.path.getmtime(self.store_file)
+            
+            # Scan knowledge base for newer files using safe traversal
+            needs_rebuild = False
+            for root, _, files in os.walk(self.kb_path):
+                # Hardened against traversal by resolving realpath
+                safe_root = os.path.realpath(root)
+                if not safe_root.startswith(os.path.realpath(self.kb_path)):
+                    continue
+                    
+                for file in files:
+                    if file.endswith(".md"):
+                        file_path = os.path.join(safe_root, file)
+                        if os.path.getsize(file_path) > 5 * 1024 * 1024:
+                            continue # Skip excessively large files
+                            
+                        if os.path.getmtime(file_path) > store_mtime:
+                            logging.info(f"Outdated index detected due to changes in {file}.")
+                            needs_rebuild = True
+                            break
+                if needs_rebuild:
+                    break
             
             if needs_rebuild:
+                logging.info("Commencing live rebuilt of vector store...")
                 build_vector_store()
+                return True
+            
+            return False
                 
         except Exception as e:
-            print(f"[!] Warning: Auto-sync failed: {e}")
+            logging.error(f"Auto-sync mechanism failed securely: {e}")
             if not os.path.exists(self.store_file):
-                raise RuntimeError("Critical: Knowledge base not found and auto-sync failed.")
+                raise RuntimeError("Critical Error: Knowledge base missing.")
+            return False
 
-    def _retrieve(self, question: str, top_k: int = 5) -> list[dict]:
+    def _calculate_bm25_score(self, query_tokens: List[str], chunk_idx: int, term_name: str) -> float:
         """
-        Retrieve the top-k most relevant document chunks for a question.
-        Uses TF-IDF cosine similarity.
+        Calculates the relevance score for a single chunk against the query
+        using the BM25 algorithm and custom term-boosting.
         """
-        tokens = tokenize(question)
-        tf = compute_tf(tokens)
-        query_vec = compute_tfidf_vector(tf, self.idf)
+        if chunk_idx >= len(self.doc_lengths) or chunk_idx >= len(self.doc_term_counts):
+            return 0.0
 
-        scored = []
-        for i, chunk_vec in enumerate(self.tfidf_vectors):
-            score = cosine_similarity(query_vec, chunk_vec)
-            if score > 0.0:
-                scored.append((score, i))
+        doc_len = self.doc_lengths[chunk_idx]
+        doc_counts = self.doc_term_counts[chunk_idx]
+        
+        term_name_words = re.findall(r"[a-z0-9]+", term_name.lower())
+        term_score_boost = 1.0
+        
+        score = 0.0
+        for term in query_tokens:
+            # Add intelligence boost: If the user is specifically querying the defined term, heavily prioritize it
+            if term in term_name_words:
+                term_score_boost += 10.0
+            elif term in term_name.lower():
+                term_score_boost += 2.0
+                
+            if term in doc_counts and term in self.idf:
+                tf = doc_counts[term]
+                idf = self.idf[term]
+                
+                # Standard BM25 scoring formula
+                numerator = tf * (self.BM25_K1 + 1)
+                denominator = tf + self.BM25_K1 * (1 - self.BM25_B + self.BM25_B * (doc_len / self.avgdl))
+                score += idf * (numerator / denominator)
+        
+        # Apply the final term relevance multiplier
+        return score * term_score_boost
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[:top_k]
+    def _retrieve(self, question: str, top_k: int = 5) -> List[Dict[str, str]]:
+        """
+        Tokenizes the user query and searches the index for the most contextually relevant chunks.
+        """
+        tokens = tokenize_text(question)
+        if not tokens:
+            return []
+
+        scored_chunks = []
+        for i, chunk in enumerate(self.chunks):
+            term_name = chunk.get("term", "")
+            score = self._calculate_bm25_score(tokens, i, term_name)
+            
+            # Minimum required threshold to filter out vague partial matches
+            if score > 0.1:
+                scored_chunks.append((score, i))
+
+        # Sort descending by highest relevance score
+        scored_chunks.sort(key=lambda x: x[0], reverse=True)
+        top_indices = scored_chunks[:top_k]
 
         results = []
-        for score, idx in top:
+        for score, idx in top_indices:
             results.append({
                 "text": self.chunks[idx]["text"],
                 "score": score,
@@ -161,61 +183,56 @@ class HellobooksRAG:
             })
         return results
 
-    def _generate(self, question: str, context_chunks: list[dict]) -> str:
+    def _generate(self, context_chunks: List[Dict[str, str]]) -> str:
         """
-        Generate a concise answer from retrieved context chunks.
-        Extracts only the relevant point text (not the topic prefix)
-        and formats them as a clean numbered list.
+        Synthesizes the retrieved chunks into a clean, numbered, human-readable answer.
         """
         if not context_chunks:
             return (
                 "I could not find relevant information to answer your question. "
-                "Please try asking about bookkeeping, invoices, profit and loss, "
-                "balance sheets, or cash flow."
+                "Please check the existing knowledge base, or add this information to a markdown file."
             )
 
-        # Determine the primary topic from the top result
+        # Utilize the most relevant chunk's topic to set the context
         primary_topic = context_chunks[0]["topic"]
 
-        # Extract the actual content (after the topic prefix line)
         answer_points = []
         for chunk in context_chunks:
             text = chunk["text"]
-            # The chunk format is: "Topic: ...\nActual content line"
             lines = text.strip().split("\n")
-            if len(lines) > 1:
-                # Get everything after the topic prefix line
-                content = "\n".join(lines[1:]).strip()
-            else:
-                content = text.strip()
+            
+            # Omit the "Topic: XYZ" context prefix when presenting to the user
+            content = "\n".join(lines[1:]).strip() if len(lines) > 1 else text.strip()
 
+            # Prevent duplicate information
             if content and content not in answer_points:
                 answer_points.append(content)
 
-        # Build the answer
         header = f"Here is what I found about {primary_topic}:\n\n"
+        formatted_points = [f"{i}. {point}" for i, point in enumerate(answer_points, 1)]
+        
+        sources = sorted(list({chunk["topic"] for chunk in context_chunks}))
+        footer = f"\n\n(Source: {', '.join(sources)})"
 
-        # Format as numbered list
-        formatted_points = []
-        for i, point in enumerate(answer_points, 1):
-            formatted_points.append(f"{i}. {point}")
-
-        answer = header + "\n".join(formatted_points)
-
-        # Add source
-        sources = set()
-        for chunk in context_chunks:
-            sources.add(chunk["topic"])
-        source_line = ", ".join(sorted(sources))
-        answer += f"\n\n(Source: {source_line})"
-
-        return answer
+        return header + "\n".join(formatted_points) + footer
 
     def answer_question(self, question: str) -> str:
         """
-        Main RAG pipeline entry point.
-          User Question → Retrieve relevant docs → Generate answer
+        The primary operational entry point.
+        Checks for live updates -> Retrieves Data -> Formats Response.
         """
-        retrieved = self._retrieve(question, top_k=5)
-        answer = self._generate(question, retrieved)
-        return answer
+        # Strict Input Validation to prevent abuse
+        if not isinstance(question, str):
+            logging.warning("Non-string input rejected.")
+            return "Invalid question format."
+            
+        if len(question) > MAX_QUERY_LENGTH:
+            logging.warning(f"Query length {len(question)} exceeded max limit.")
+            return f"Query too long. Please restrict to {MAX_QUERY_LENGTH} characters."
+
+        if self._check_for_updates():
+            self._load_store()
+            
+        retrieved_context = self._retrieve(question, top_k=5)
+        return self._generate(retrieved_context)
+

@@ -1,201 +1,239 @@
 """
-Embedding Generation Script for Hellobooks AI
+Vector Store Indexer
 
-This script:
-1. Loads all markdown documents from the knowledge_base/ folder
-2. Splits them into fine-grained chunks (one per numbered point)
-3. Computes TF-IDF vectors for each chunk (pure Python implementation)
-4. Saves the vector store to disk as JSON
-
-Usage:
-    python scripts/create_embeddings.py
+Responsible for loading markdown files from the knowledge base, chunking them
+into discrete, searchable items, and pre-computing BM25 statistics for rapid
+retrieval during queries.
 """
 
 import os
 import json
 import math
 import re
+import logging
 from collections import Counter
+from typing import List, Dict, Any
 
+from scripts.text_processing import tokenize_text, compute_term_frequencies
 
-# ── Stop words ──────────────────────────────────────────────────────
+# Security constants
+MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB threshold to prevent memory exhaustion
 
-STOP_WORDS = {
-    "a", "an", "the", "is", "it", "in", "on", "of", "to", "and", "or",
-    "for", "with", "as", "at", "by", "from", "that", "this", "are", "was",
-    "were", "be", "been", "being", "have", "has", "had", "do", "does",
-    "did", "will", "would", "shall", "should", "may", "might", "can",
-    "could", "not", "no", "but", "if", "so", "than", "too", "very",
-    "just", "about", "also", "into", "over", "such", "its", "your",
-    "our", "their", "we", "you", "he", "she", "they", "them", "his",
-    "her", "all", "each", "every", "both", "few", "more", "most",
-    "other", "some", "any", "these", "those", "what", "which", "who",
-    "how", "when", "where", "why", "up", "out", "then", "here", "there",
-}
-
-
-# ── Tokenizer ───────────────────────────────────────────────────────
-
-def tokenize(text: str) -> list[str]:
-    """Lowercase, split on non-alphanumeric chars, remove stop words."""
-    words = re.findall(r"[a-z0-9]+", text.lower())
-    return [w for w in words if w not in STOP_WORDS and len(w) > 1]
-
-
-# ── TF-IDF computation ─────────────────────────────────────────────
-
-def compute_tf(tokens: list[str]) -> dict[str, float]:
-    counts = Counter(tokens)
-    total = len(tokens) if tokens else 1
-    return {word: count / total for word, count in counts.items()}
-
-
-def compute_idf(documents_tokens: list[list[str]]) -> dict[str, float]:
-    n_docs = len(documents_tokens)
-    df = Counter()
-    for tokens in documents_tokens:
-        for token in set(tokens):
-            df[token] += 1
-    return {word: math.log(n_docs / (1 + count)) for word, count in df.items()}
-
-
-def compute_tfidf_vector(tf: dict, idf: dict) -> dict[str, float]:
-    return {word: tf_val * idf.get(word, 0) for word, tf_val in tf.items()}
-
-
-# ── Document loading and chunking ──────────────────────────────────
-
-def load_markdown_files(folder: str) -> list[dict]:
-    """Read all .md files from a folder."""
-    docs = []
-    for filename in sorted(os.listdir(folder)):
-        if filename.endswith(".md"):
-            filepath = os.path.join(folder, filename)
-            with open(filepath, "r", encoding="utf-8") as f:
-                content = f.read()
-            # Extract topic name from filename
-            topic = filename.replace(".md", "").replace("_", " ").title()
-            docs.append({"text": content, "source": filepath, "topic": topic})
-    return docs
-
-
-def split_into_chunks(text: str, source: str, topic: str) -> list[dict]:
+class KnowledgeBaseIndexer:
     """
-    Split a document into fine-grained chunks.
-    Each numbered point (e.g., 1. Name: Description) becomes its own chunk.
-    The document title and description are prepended to each chunk
-    for better semantic context during retrieval.
+    Handles reading markdown documents, parsing them into chunks, and
+    compiling the BM25 statistical vector store.
     """
-    lines = text.strip().split("\n")
-    chunks = []
 
-    # Extract the document title and description
-    doc_title = ""
-    doc_description = ""
-    content_lines = []
+    def __init__(self, knowledge_base_dir: str, vector_store_dir: str):
+        self.kb_dir = knowledge_base_dir
+        self.vs_dir = vector_store_dir
+        self.store_file_path = os.path.join(self.vs_dir, "store.json")
 
-    # Better regex for detecting the start of a multi-point list (1., 2., etc.)
-    # or just content lines.
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
+    def _load_documents(self) -> List[Dict[str, str]]:
+        """Safely reads all markdown files from the target knowledge base directory."""
+        if not os.path.exists(self.kb_dir) or not os.path.isdir(self.kb_dir):
+            logging.error(f"[!] Invalid or missing knowledge base directory: {self.kb_dir}")
+            return []
+
+        documents = []
+        try:
+            for filename in sorted(os.listdir(self.kb_dir)):
+                # Strict file extension validation
+                if not filename.endswith(".md"):
+                    continue
+
+                # Defensive path joining to prevent traversal
+                filepath = os.path.abspath(os.path.join(self.kb_dir, filename))
+                if not filepath.startswith(os.path.abspath(self.kb_dir)):
+                    logging.warning(f"Path traversal attempt blocked for file: {filename}")
+                    continue
+
+                # File bounds checking to prevent resource exhaustion attacks
+                if os.path.getsize(filepath) > MAX_FILE_SIZE_BYTES:
+                    logging.warning(f"File {filename} exceeds maximum size limit. Skipping.")
+                    continue
+
+                with open(filepath, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                # Format the filename into a clean, human-readable topic
+                topic = filename.replace(".md", "").replace("_", " ").title()
+                documents.append({
+                    "raw_text": content,
+                    "filepath": filepath,
+                    "topic": topic
+                })
+        except Exception as e:
+            logging.error(f"Error loading documents from knowledge base: {e}")
             
-        if stripped.startswith("# ") and not doc_title:
-            doc_title = stripped.lstrip("# ").strip()
-        elif stripped.startswith("**Description**"):
-            doc_description = stripped.replace("**Description**:", "").replace("**Description**", "").strip()
-        else:
-            # Check if it starts with a number or is general content
-            content_lines.append(stripped)
+        return documents
 
-    # Build a context prefix that helps TF-IDF identify the correct topic
-    context_prefix = f"Topic: {doc_title}."
-    if doc_description:
-        context_prefix += f" {doc_description}"
+    def _parse_markdown_into_chunks(self, document: Dict[str, str]) -> List[Dict[str, str]]:
+        """
+        Parses a full markdown document into smaller semantic chunks.
+        It groups multi-line bullet points or Q&A blocks together for continuity.
+        """
+        lines = document["raw_text"].strip().split("\n")
+        
+        doc_title = ""
+        doc_desc = ""
+        current_block = []
+        parsed_blocks = []
 
-    # Split each line (numbered point) into its own chunk
-    for line in content_lines:
-        # Detect numbered points like "1. Name: Description" or "20. Name"
-        # and clean up formatting
-        clean_line = re.sub(r"^\d+[\.\)]\s*", "", line)
-        clean_line = clean_line.replace("**", "")
+        for line in lines:
+            stripped_line = line.strip()
+            
+            # Empty lines signify the end of a block
+            if not stripped_line:
+                if current_block:
+                    parsed_blocks.append(" ".join(current_block))
+                    current_block = []
+                continue
+                
+            # Extract header and description specifically
+            if stripped_line.startswith("# ") and not doc_title:
+                doc_title = stripped_line.lstrip("# ").strip()
+            elif stripped_line.startswith("**Description**"):
+                doc_desc = stripped_line.replace("**Description**:", "").replace("**Description**", "").strip()
+            else:
+                # Detect the start of a new numbered point, bullet, or question
+                is_new_point = bool(re.match(r"^(\d+[\.\)]|[-*]|Q:)\s", stripped_line))
+                
+                if is_new_point and current_block:
+                    parsed_blocks.append(" ".join(current_block))
+                    current_block = [stripped_line]
+                else:
+                    current_block.append(stripped_line)
+        
+        # Flush the final block
+        if current_block:
+            parsed_blocks.append(" ".join(current_block))
 
-        # Combine the topic context with the specific point content
-        chunk_text = f"{context_prefix}\n{clean_line}"
+        # Build context prefix to artificially boost relevance
+        context_prefix = f"Topic: {doc_title}."
+        if doc_desc:
+            context_prefix += f" {doc_desc}"
 
-        chunks.append({
+        chunks = []
+        for block in parsed_blocks:
+            chunks.append(self._format_chunk(block, context_prefix, document))
+
+        # Fallback if no specific blocks were detected
+        if not chunks:
+            chunks.append({
+                "text": f"{context_prefix}\n{document['raw_text'].strip()}",
+                "source": document['filepath'],
+                "topic": document['topic'],
+                "term": ""
+            })
+
+        return chunks
+
+    def _format_chunk(self, block: str, context_prefix: str, document: Dict[str, str]) -> Dict[str, str]:
+        """Cleans formatting artifacts and extracts the primary term for a given block."""
+        # Strip numbering and markdown bolding
+        clean_block = re.sub(r"^(\d+[\.\)]|[-*]|Q:)\s*", "", block, count=1)
+        clean_block = clean_block.replace("**", "")
+
+        chunk_text = f"{context_prefix}\n{clean_block}"
+
+        # Attempt to isolate the specific term being defined (often before a colon)
+        term_name = ""
+        if block.startswith("Q:"):
+             term_match = re.search(r"Q:\s*(.*?)\s*\?", block, re.IGNORECASE)
+             if term_match:
+                 term_name = term_match.group(1).strip()
+             elif ":" in clean_block:
+                 term_name = clean_block.split(":")[0].strip()
+        elif ":" in clean_block:
+             term_name = clean_block.split(":")[0].strip()
+            
+        # Reject term names that are full sentences
+        if len(term_name.split()) > 8:
+            term_name = "" 
+
+        return {
             "text": chunk_text,
-            "source": source,
-            "topic": topic
-        })
+            "source": document["filepath"],
+            "topic": document["topic"],
+            "term": term_name
+        }
 
-    # Fallback if no specific points were extracted
-    if not chunks:
-        chunks.append({
-            "text": f"{context_prefix}\n{text.strip()}",
-            "source": source,
-            "topic": topic
-        })
+    def _compute_bm25_idf(self, documents_tokens: List[List[str]]) -> Dict[str, float]:
+        """Calculates the BM25 specific Inverse Document Frequency for all terms."""
+        n_docs = len(documents_tokens)
+        doc_frequencies = Counter()
+        
+        # Count in how many documents each unique term appears
+        for tokens in documents_tokens:
+            unique_tokens = set(tokens)
+            for token in unique_tokens:
+                doc_frequencies[token] += 1
+        
+        # Apply smoothing to BM25 formula to prevent negative values
+        idf_scores = {}
+        for word, count in doc_frequencies.items():
+            numerator = n_docs - count + 0.5
+            denominator = count + 0.5
+            smoothed_score = math.log((numerator / denominator) + 1.0)
+            idf_scores[word] = smoothed_score if smoothed_score > 0 else 0.01
+            
+        return idf_scores
 
-    return chunks
+    def build_store(self):
+        """Orchestrates the entire indexing procedure and writes the JSON store."""
+        os.makedirs(self.vs_dir, exist_ok=True)
+
+        print("[*] Rebuilding vector store from knowledge_base/...")
+        documents = self._load_documents()
+        if not documents:
+            print("[!] No valid markdown files found. Aborting build.")
+            return
+
+        all_chunks = []
+        for doc in documents:
+            all_chunks.extend(self._parse_markdown_into_chunks(doc))
+        
+        # Tokenize and compute frequencies
+        all_tokens = [tokenize_text(chunk["text"]) for chunk in all_chunks]
+        idf_scores = self._compute_bm25_idf(all_tokens)
+
+        doc_term_counts = []
+        doc_lengths = []
+        total_length = 0
+        
+        for tokens in all_tokens:
+            counts = compute_term_frequencies(tokens)
+            length = len(tokens)
+            doc_term_counts.append(counts)
+            doc_lengths.append(length)
+            total_length += length
+            
+        average_doc_length = total_length / max(1, len(all_chunks))
+
+        store_data = {
+            "chunks": all_chunks,
+            "idf": idf_scores,
+            "doc_term_counts": doc_term_counts,
+            "doc_lengths": doc_lengths,
+            "avgdl": average_doc_length
+        }
+
+        with open(self.store_file_path, "w", encoding="utf-8") as f:
+            json.dump(store_data, f, ensure_ascii=False, indent=2)
+
+        print(f"[*] Build complete: {len(all_chunks)} chunks indexed successfully.")
 
 
 def build_vector_store():
-    """Reads documents, chunks them, generates TF-IDF vectors, and saves to JSON."""
+    """Entry point for standalone execution."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    knowledge_base_path = os.path.join(base_dir, "knowledge_base")
-    vector_store_path = os.path.join(base_dir, "vector_store")
-
-    if not os.path.exists(knowledge_base_path):
-        print(f"[!] Knowledge base folder not found: {knowledge_base_path}")
-        return
-
-    os.makedirs(vector_store_path, exist_ok=True)
-
-    # Step 1: Load markdown files
-    print("[*] Rebuilding vector store from knowledge_base/...")
-    documents = load_markdown_files(knowledge_base_path)
-    if not documents:
-        print("[!] No markdown files found.")
-        return
-
-    # Step 2: Split into fine-grained chunks
-    all_chunks = []
-    for doc in documents:
-        doc_chunks = split_into_chunks(doc["text"], doc["source"], doc["topic"])
-        all_chunks.extend(doc_chunks)
+    kb_dir = os.path.join(base_dir, "knowledge_base")
+    vs_dir = os.path.join(base_dir, "vector_store")
     
-    # Step 3: Tokenize
-    all_tokens = [tokenize(chunk["text"]) for chunk in all_chunks]
-
-    # Step 4: Compute IDF
-    idf = compute_idf(all_tokens)
-
-    # Step 5: Compute TF-IDF vectors
-    tfidf_vectors = []
-    for tokens in all_tokens:
-        tf = compute_tf(tokens)
-        vec = compute_tfidf_vector(tf, idf)
-        tfidf_vectors.append(vec)
-
-    # Step 6: Save
-    store = {
-        "chunks": all_chunks,
-        "idf": idf,
-        "tfidf_vectors": tfidf_vectors,
-    }
-
-    store_file = os.path.join(vector_store_path, "store.json")
-    with open(store_file, "w", encoding="utf-8") as f:
-        json.dump(store, f, ensure_ascii=False, indent=2)
-
-    print(f"[*] Rebuild complete: {len(all_chunks)} chunks indexed in {store_file}")
-
-
-if __name__ == "__main__":
-    build_vector_store()
-
+    indexer = KnowledgeBaseIndexer(kb_dir, vs_dir)
+    indexer.build_store()
 
 if __name__ == "__main__":
     build_vector_store()
